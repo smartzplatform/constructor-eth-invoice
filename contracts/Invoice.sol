@@ -7,6 +7,21 @@ contract Invoice {
 
     enum Status { Active, Overdue, Paid }
 
+    event Refund(
+        address receiver,
+        uint256 amount
+    );
+
+    event Payment(
+        address from,
+        uint256 amount
+    );
+
+    event Withdraw(
+        address receiver,
+        uint256 amount
+    );
+
     uint256 public InvoiceAmount;
     uint256 public CurrentAmount;
     uint256 public ValidityPeriod;
@@ -42,6 +57,11 @@ contract Invoice {
         Owner = msg.sender;
     }
 
+    modifier onlyPayer() {
+        require(Payer == address(0) || msg.sender == Payer);
+        _;
+    }
+
     function getStatus() public view returns (Status) {
         if (WasPaid == true)
             return Status.Paid;
@@ -52,12 +72,15 @@ contract Invoice {
 
     function doRefund(uint256 amount) internal {
         msg.sender.transfer(amount);
+        emit Refund(msg.sender, amount);
     }
 
-    function pay() public payable {
-        if (Payer != address(0))
-            require(msg.sender == Payer);
+    function doWithdraw(address receiver, uint256 amount) internal {
+        receiver.transfer(amount);
+        emit Withdraw(receiver, amount);
+    }
 
+    function pay() public payable onlyPayer {
         if (getStatus() != Status.Active) {
             doRefund(msg.value);
             return;
@@ -73,28 +96,23 @@ contract Invoice {
         }
         else
             CurrentAmount = will;
+
+        emit Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
         Status status = getStatus();
-        require (status == Status.Paid || status == Status.Overdue);
 
-        if (status == Status.Paid) {
-            require(msg.sender == Beneficiary);
-            require(CurrentAmount >= amount);
+        require(CurrentAmount >= amount);
 
-            receiver.transfer(amount);
+        require (
+            (status == Status.Paid && msg.sender == Beneficiary) ||
+            (status == Status.Overdue && msg.sender == PartialReceiver)
+        );
 
-            CurrentAmount = CurrentAmount.sub(amount);
-        }
-        else if (status == Status.Overdue) {
-            require(msg.sender == PartialReceiver);
-            require(CurrentAmount >= amount);
+        doWithdraw(receiver, amount);
 
-            receiver.transfer(amount);
-
-            CurrentAmount = CurrentAmount.sub(amount);
-        }
+        CurrentAmount = CurrentAmount.sub(amount);
     }
 }
 

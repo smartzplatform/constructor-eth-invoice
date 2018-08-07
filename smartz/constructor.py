@@ -49,15 +49,14 @@ class Constructor(ConstructorInstance):
 
                 "validityPeriod": {
                     "title": "Valid Until",
-                    "desctription": "After this date invoice contract will not accept incoming Ether and will send it back.",
+                    "description": "After this date invoice contract will not accept incoming Ether and will send it back.",
                     "$ref": "#/definitions/unixTime"
                 },
 
                 "partialReceiver": {
                     "title": "Partial Receiver",
-                    "desctription": "Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.",
+                    "description": "Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.",
                     "type": "string",
-                    "default": "Beneficiary",
                     "enum": ['Beneficiary', 'Payer'],
                 }
             },
@@ -103,10 +102,17 @@ class Constructor(ConstructorInstance):
             source = source.replace('%validityPeriodVisibility%', 'public')
             source = source.replace('%partialReceiverVisibility%', 'public')
 
-        if fields_vals['partialReceiver'] == 'Beneficiary':
+        if 'partialReceiver' not in fields_vals:
+            fields_vals['partialReceiver'] = '0x00'
+        elif fields_vals['partialReceiver'] == 'Beneficiary':
             fields_vals['partialReceiver'] = fields_vals['beneficiary']
         elif fields_vals['partialReceiver'] == 'Payer':
             fields_vals['partialReceiver'] = fields_vals['payer']
+        else:
+            return {
+                "result": "error",
+                "error_descr": "incorrect `partialReceiver`"
+            }
 
         source = source \
             .replace('%invoiceAmount%', str(fields_vals['invoiceAmount'])) \
@@ -217,7 +223,7 @@ class Constructor(ConstructorInstance):
         return {
             "result": "success",
             'function_specs': function_titles,
-            'dashboard_functions': ['InvoiceAmount', 'CurrentAmount']
+            'dashboard_functions': ['InvoiceAmount', 'CurrentAmount', 'getStatus']
         }
 
 
@@ -259,6 +265,21 @@ contract Invoice {
 
     enum Status { Active, Overdue, Paid }
 
+    event Refund(
+        address receiver,
+        uint256 amount
+    );
+
+    event Payment(
+        address from,
+        uint256 amount
+    );
+
+    event Withdraw(
+        address receiver,
+        uint256 amount
+    );
+
     uint256 public InvoiceAmount;
     uint256 public CurrentAmount;
     uint256 %validityPeriodVisibility% ValidityPeriod;
@@ -266,7 +287,7 @@ contract Invoice {
     address %payerVisibility% Payer;
     address %partialReceiverVisibility% PartialReceiver;
     string public Memo;
-    address public Owner;
+    address internal Owner;
 
     bool internal WasPaid;
 
@@ -294,6 +315,11 @@ contract Invoice {
         Owner = msg.sender;
     }
 
+    modifier onlyPayer() {
+        require(Payer == address(0) || msg.sender == Payer);
+        _;
+    }
+
     function getStatus() public view returns (Status) {
         if (WasPaid == true)
             return Status.Paid;
@@ -304,12 +330,15 @@ contract Invoice {
 
     function doRefund(uint256 amount) internal {
         msg.sender.transfer(amount);
+        Refund(msg.sender, amount);
     }
 
-    function pay() public payable {
-        if (Payer != address(0))
-            require(msg.sender == Payer);
+    function doWithdraw(address receiver, uint256 amount) internal {
+        receiver.transfer(amount);
+        Withdraw(receiver, amount);
+    }
 
+    function pay() public payable onlyPayer {
         if (getStatus() != Status.Active) {
             doRefund(msg.value);
             return;
@@ -325,30 +354,32 @@ contract Invoice {
         }
         else
             CurrentAmount = will;
+
+        Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
         Status status = getStatus();
-        require (status == Status.Paid || status == Status.Overdue);
 
-        if (status == Status.Paid) {
-            require(msg.sender == Beneficiary);
-            require(CurrentAmount >= amount);
+        require(CurrentAmount >= amount);
 
-            receiver.transfer(amount);
+        require (
+            (status == Status.Paid && msg.sender == Beneficiary) ||
+            (status == Status.Overdue && msg.sender == PartialReceiver)
+        );
 
-            CurrentAmount = CurrentAmount.sub(amount);
-        }
-        else if (status == Status.Overdue) {
-            require(msg.sender == PartialReceiver);
-            require(CurrentAmount >= amount);
+        doWithdraw(receiver, amount);
 
-            receiver.transfer(amount);
-
-            CurrentAmount = CurrentAmount.sub(amount);
-        }
+        CurrentAmount = CurrentAmount.sub(amount);
     }
 }
 
-contract InvoiceWrapper is Invoice(%invoiceAmount%, "%memo%", %beneficiary%, %payer%, %validityPeriod%, %partialReceiver%) { }
+contract InvoiceWrapper is Invoice(
+    %invoiceAmount%,
+    "%memo%",
+    %beneficiary%,
+    %payer%,
+    %validityPeriod%,
+    %partialReceiver%
+) { }
     """
