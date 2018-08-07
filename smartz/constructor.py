@@ -18,7 +18,7 @@ class Constructor(ConstructorInstance):
                 "invoiceAmount", "beneficiary", "memo"
             ],
 
-            "additionalProperties": False,
+            "additionalProperties": True,
 
             "properties": {
                 "invoiceAmount": {
@@ -52,21 +52,42 @@ class Constructor(ConstructorInstance):
                     "description": "After this date invoice contract will not accept incoming Ether and will send it back.",
                     "$ref": "#/definitions/unixTime"
                 },
-
-                "partialReceiver": {
-                    "title": "Partial Receiver",
-                    "description": "Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.",
-                    "type": "string",
-                    "enum": ['Beneficiary', 'Payer'],
-                }
             },
 
             "dependencies": {
-                "validityPeriod": ["partialReceiver"]
+                "validityPeriod": {
+                    "properties": {
+                        "partialReceiver": {
+                            "title": "Partial Receiver",
+                            "description": "Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.",
+                            "type": "string",
+                            "enum": ['Beneficiary', 'Payer'],
+                        }
+                    },
+                    "required": ["partialReceiver"]
+                },
+                "partialReceiver": {
+                    "oneOf": [{
+                        "properties": {
+                            "partialReceiver": {
+                                "enum": ['Beneficiary']
+                            }
+                        },
+                    }, {
+                        "properties": {
+                            "partialReceiver": {
+                                "enum": ['Payer']
+                            },
+                        },
+                        "required": ["payer"]
+                    }]
+                }
             }
         }
 
         ui_schema = {
+            "ui:order": ["invoiceAmount", "beneficiary", "memo", "payer", "validityPeriod", "*"],
+
             "invoiceAmount": {
                 "ui:widget": "ethCount",
             },
