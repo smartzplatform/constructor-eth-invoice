@@ -43,13 +43,13 @@ class Constructor(ConstructorInstance):
 
                 "payer": {
                     "title": "Payer address",
-                    "description": "If this address is set, invoice can be paid only from it. All other receipts will be returned.",
+                    "description": "If this address is set, invoice can be paid only by it. All other receipts will be returned.",
                     "$ref": "#/definitions/address"
                 },
 
                 "validityPeriod": {
                     "title": "Valid Until",
-                    "description": "After this date invoice contract will not accept incoming Ether and will send it back.",
+                    "description": "After this date invoice will become invalid and send back all incoming Ether. If it was partially paid before this date, stored ether will become available for withdraw by payer or beneficiary depending on the following parameter value.",
                     "$ref": "#/definitions/unixTime"
                 },
             },
@@ -59,7 +59,7 @@ class Constructor(ConstructorInstance):
                     "properties": {
                         "partialReceiver": {
                             "title": "Partial Receiver",
-                            "description": "Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.",
+                            "description": "Who will withdraw funds from invoice contract in case it's validity period ended and it accumulated some funds on it.",
                             "type": "string",
                             "enum": ['Beneficiary', 'Payer'],
                         }
@@ -152,63 +152,30 @@ class Constructor(ConstructorInstance):
     def post_construct(self, fields_vals, abi_array):
 
         function_titles = {
+            # VIEW functions
+            'Memo': {
+                'title': 'Short Message',
+                'description': 'What is the invoice for.',
+                'sorting_order': 10
+            },
+
             'InvoiceAmount': {
                 'title': 'Invoice Amount',
                 'description': 'Ether amount which should be paid.',
                 'ui:widget': 'ethCount',
-                'sorting_order': 5
+                'sorting_order': 20
             },
 
             'CurrentAmount': {
                 'title': 'Current Amount',
-                'description': 'Ether amount currently accumulated in invoice.',
+                'description': 'Ether amount currently accumulated in invoice contract.',
                 'ui:widget': 'ethCount',
-                'sorting_order': 10
-            },
-
-            'Beneficiary': {
-                'title': 'Beneficiary',
-                'description': 'Who will get money when the invoice is paid.',
-                'sorting_order': 10
-            },
-
-            'Memo': {
-                'title': 'Short Message',
-                'description': 'What is the invoice for.',
-                'sorting_order': 15
-            },
-
-            'ValidityPeriod': {
-                'title': 'Valid Until',
-                'description': 'After this date invoice contract will not accept incoming Ether and will send it back.',
-                'ui:widget': 'unixTime',
-                'ui:widget_options': {
-                    'format': "yyyy.mm.dd HH:MM:ss (o)"
-                },
-                'sorting_order': 20
-            },
-
-            'Payer': {
-                'title': 'Payer',
-                'description': 'If this address is set, invoice can be paid only from it. All other receipts will be returned.',
-                'sorting_order': 25
-            },
-
-            'PartialReceiver': {
-                'title': 'Partial Receiver',
-                'description': 'Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.',
                 'sorting_order': 30
-            },
-
-            'Owner': {
-                'title': 'Contract Owner',
-                'description': 'Contract owner address.',
-                'sorting_order': 35
             },
 
             'getStatus': {
                 'title': 'Status',
-                'description': 'Current invoice status',
+                'description': 'Current invoice status.',
                 'ui:widget': 'enum',
                 'ui:widget_options': {
                     'enum': ['Active', 'Overdue', 'Paid']
@@ -216,35 +183,72 @@ class Constructor(ConstructorInstance):
                 'sorting_order': 40
             },
 
+            'Beneficiary': {
+                'title': 'Beneficiary',
+                'description': 'Who will get money when the invoice is paid.',
+                'sorting_order': 50
+            },
+
+            'Payer': {
+                'title': 'Payer',
+                'description': 'If this address is set, invoice can be paid only from it. All other receipts will be returned.',
+                'sorting_order': 60
+            },
+
+            'ValidityPeriod': {
+                'title': 'Valid Until',
+                'description': 'After this date invoice contract will not accept incoming Ether and accumulated ether (if any) will become available for withdraw.',
+                'ui:widget': 'unixTime',
+                'ui:widget_options': {
+                    'format': "yyyy.mm.dd HH:MM:ss (o)"
+                },
+                'sorting_order': 70
+            },
+
+            'PartialReceiver': {
+                'title': 'Partial Receiver',
+                'description': 'Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.',
+                'sorting_order': 80
+            },
+
+            # WRITE functions
             'pay': {
-                'title': 'Pay invoice',
+                'title': 'Pay',
                 'description': 'Pay the invoice',
                 'payable_details': {
                     'title': 'Ether amount',
-                    'description': 'This ether amount will be sent with the function call.'
+                    'description': 'This ether amount will be sent to the invoice contract.'
                 },
-                'sorting_order': 45
+                'sorting_order': 100
+                'icon': {
+                    'pack': 'materialdesignicons',
+                    'name': 'arrow-right-bold'
+                },
             },
 
             'withdraw': {
                 'title': 'Withdraw',
                 'description': 'Withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.',
-                'sorting_order': 50,
+                'sorting_order': 110,
                 'inputs': [{
                     'title': 'Receiver Address',
-                    'description': 'Who will receive funds'
+                    'description': 'Who will receive ether.'
                 }, {
                     'title': 'Ether Amount',
                     'description': 'This ether amount will be sent.',
                     'ui:widget': 'ethCount'
-                }]
-            }
+                }],
+                'icon': {
+                    'pack': 'materialdesignicons',
+                    'name': 'arrow-left-bold'
+                },
+            },
         }
 
         return {
             "result": "success",
             'function_specs': function_titles,
-            'dashboard_functions': ['InvoiceAmount', 'CurrentAmount', 'getStatus']
+            'dashboard_functions': ['Memo', 'InvoiceAmount', 'CurrentAmount', 'getStatus']
         }
 
 
