@@ -153,20 +153,20 @@ class Constructor(ConstructorInstance):
 
         function_titles = {
             # VIEW functions
-            'Memo': {
+            'memo': {
                 'title': 'Short Message',
                 'description': 'What is the invoice for.',
                 'sorting_order': 10
             },
 
-            'InvoiceAmount': {
+            'invoiceAmount': {
                 'title': 'Invoice Amount',
                 'description': 'Ether amount which should be paid.',
                 'ui:widget': 'ethCount',
                 'sorting_order': 20
             },
 
-            'CurrentAmount': {
+            'currentAmount': {
                 'title': 'Current Amount',
                 'description': 'Ether amount currently accumulated in invoice contract.',
                 'ui:widget': 'ethCount',
@@ -183,19 +183,19 @@ class Constructor(ConstructorInstance):
                 'sorting_order': 40
             },
 
-            'Beneficiary': {
+            'beneficiary': {
                 'title': 'Beneficiary',
                 'description': 'Who will get money when the invoice is paid.',
                 'sorting_order': 50
             },
 
-            'Payer': {
+            'payer': {
                 'title': 'Payer',
                 'description': 'If this address is set, invoice can be paid only from it. All other receipts will be returned.',
                 'sorting_order': 60
             },
 
-            'ValidityPeriod': {
+            'validityPeriod': {
                 'title': 'Valid Until',
                 'description': 'After this date invoice contract will not accept incoming Ether and accumulated ether (if any) will become available for withdraw.',
                 'ui:widget': 'unixTime',
@@ -205,21 +205,20 @@ class Constructor(ConstructorInstance):
                 'sorting_order': 70
             },
 
-            'PartialReceiver': {
+            'partialReceiver': {
                 'title': 'Partial Receiver',
                 'description': 'Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.',
                 'sorting_order': 80
             },
 
-            # WRITE functions
-            'pay': {
+            '': {
                 'title': 'Pay',
                 'description': 'Pay the invoice',
                 'payable_details': {
                     'title': 'Ether amount',
                     'description': 'This ether amount will be sent to the invoice contract.'
                 },
-                'sorting_order': 100
+                'sorting_order': 100,
                 'icon': {
                     'pack': 'materialdesignicons',
                     'name': 'arrow-right-bold'
@@ -248,7 +247,7 @@ class Constructor(ConstructorInstance):
         return {
             "result": "success",
             'function_specs': function_titles,
-            'dashboard_functions': ['Memo', 'InvoiceAmount', 'CurrentAmount', 'getStatus']
+            'dashboard_functions': ['memo', 'invoiceAmount', 'currentAmount', 'getStatus']
         }
 
 
@@ -305,16 +304,16 @@ contract Invoice {
         uint256 amount
     );
 
-    uint256 public InvoiceAmount;
-    uint256 public CurrentAmount;
-    uint256 %validityPeriodVisibility% ValidityPeriod;
-    address public Beneficiary;
-    address %payerVisibility% Payer;
-    address %partialReceiverVisibility% PartialReceiver;
-    string public Memo;
-    address internal Owner;
+    uint256 public invoiceAmount;
+    uint256 public currentAmount;
+    uint256 %validityPeriodVisibility% validityPeriod;
+    address public beneficiary;
+    address %payerVisibility% payer;
+    address %partialReceiverVisibility% partialReceiver;
+    string public memo;
+    address public owner;
 
-    bool internal WasPaid;
+    bool internal wasPaid;
 
     function Invoice (
         uint256 _invoiceAmount,
@@ -329,26 +328,24 @@ contract Invoice {
             require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
         }
 
-        InvoiceAmount = _invoiceAmount;
-        Memo = _memo;
-        Beneficiary = _beneficiary;
-        Payer = _payer;
-        ValidityPeriod = _validityPeriod;
-        PartialReceiver = _partialReceiver;
-        CurrentAmount = 0;
-        WasPaid = false;
-        Owner = msg.sender;
+        invoiceAmount = _invoiceAmount;
+        memo = _memo;
+        beneficiary = _beneficiary;
+        payer = _payer;
+        validityPeriod = _validityPeriod;
+        partialReceiver = _partialReceiver;
+        owner = msg.sender;
     }
 
     modifier onlyPayer() {
-        require(Payer == address(0) || msg.sender == Payer);
+        require(payer == address(0) || msg.sender == payer);
         _;
     }
 
     function getStatus() public view returns (Status) {
-        if (WasPaid == true)
+        if (wasPaid == true)
             return Status.Paid;
-        if (ValidityPeriod != 0 && now > ValidityPeriod)
+        if (validityPeriod != 0 && now > validityPeriod)
             return Status.Overdue;
         return Status.Active;
     }
@@ -363,39 +360,37 @@ contract Invoice {
         Withdraw(receiver, amount);
     }
 
-    function pay() public payable onlyPayer {
-        if (getStatus() != Status.Active) {
-            doRefund(msg.value);
-            return;
-        }
+    function () public payable onlyPayer {
+        require(getStatus() == Status.Active);
 
-        uint256 will = CurrentAmount.add(msg.value);
+        uint256 will = currentAmount.add(msg.value);
 
-        if (will >= InvoiceAmount) {
-            if (will > InvoiceAmount)
-                doRefund(will - InvoiceAmount);
-            CurrentAmount = InvoiceAmount;
-            WasPaid = true;
+        if (will >= invoiceAmount) {
+            if (will > invoiceAmount)
+                doRefund(will - invoiceAmount);
+            currentAmount = invoiceAmount;
+            wasPaid = true;
         }
-        else
-            CurrentAmount = will;
+        else {
+            currentAmount = will;
+        }
 
         Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
+        require(currentAmount >= amount);
+
         Status status = getStatus();
 
-        require(CurrentAmount >= amount);
-
         require (
-            (status == Status.Paid && msg.sender == Beneficiary) ||
-            (status == Status.Overdue && msg.sender == PartialReceiver)
+            (status == Status.Paid && msg.sender == beneficiary) ||
+            (status == Status.Overdue && msg.sender == partialReceiver)
         );
 
         doWithdraw(receiver, amount);
 
-        CurrentAmount = CurrentAmount.sub(amount);
+        currentAmount = currentAmount.sub(amount);
     }
 }
 

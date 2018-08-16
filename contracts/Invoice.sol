@@ -22,16 +22,16 @@ contract Invoice {
         uint256 amount
     );
 
-    uint256 public InvoiceAmount;
-    uint256 public CurrentAmount;
-    uint256 public ValidityPeriod;
-    address public Beneficiary;
-    address public Payer;
-    address public PartialReceiver;
-    string public Memo;
-    address public Owner;
+    uint256 public invoiceAmount;
+    uint256 public currentAmount;
+    uint256 public validityPeriod;
+    address public beneficiary;
+    address public payer;
+    address public partialReceiver;
+    string public memo;
+    address public owner;
 
-    bool internal WasPaid;
+    bool internal wasPaid;
 
     constructor (
         uint256 _invoiceAmount,
@@ -46,26 +46,24 @@ contract Invoice {
             require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
         }
 
-        InvoiceAmount = _invoiceAmount;
-        Memo = _memo;
-        Beneficiary = _beneficiary;
-        Payer = _payer;
-        ValidityPeriod = _validityPeriod;
-        PartialReceiver = _partialReceiver;
-        CurrentAmount = 0;
-        WasPaid = false;
-        Owner = msg.sender;
+        invoiceAmount = _invoiceAmount;
+        memo = _memo;
+        beneficiary = _beneficiary;
+        payer = _payer;
+        validityPeriod = _validityPeriod;
+        partialReceiver = _partialReceiver;
+        owner = msg.sender;
     }
 
     modifier onlyPayer() {
-        require(Payer == address(0) || msg.sender == Payer);
+        require(payer == address(0) || msg.sender == payer);
         _;
     }
 
     function getStatus() public view returns (Status) {
-        if (WasPaid == true)
+        if (wasPaid == true)
             return Status.Paid;
-        if (ValidityPeriod != 0 && now > ValidityPeriod)
+        if (validityPeriod != 0 && now > validityPeriod)
             return Status.Overdue;
         return Status.Active;
     }
@@ -80,39 +78,37 @@ contract Invoice {
         emit Withdraw(receiver, amount);
     }
 
-    function pay() public payable onlyPayer {
-        if (getStatus() != Status.Active) {
-            doRefund(msg.value);
-            return;
-        }
+    function () public payable onlyPayer {
+        require(getStatus() == Status.Active);
 
-        uint256 will = CurrentAmount.add(msg.value);
+        uint256 will = currentAmount.add(msg.value);
 
-        if (will >= InvoiceAmount) {
-            if (will > InvoiceAmount)
-                doRefund(will - InvoiceAmount);
-            CurrentAmount = InvoiceAmount;
-            WasPaid = true;
+        if (will >= invoiceAmount) {
+            if (will > invoiceAmount)
+                doRefund(will - invoiceAmount);
+            currentAmount = invoiceAmount;
+            wasPaid = true;
         }
-        else
-            CurrentAmount = will;
+        else {
+            currentAmount = will;
+        }
 
         emit Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
+        require(currentAmount >= amount);
+
         Status status = getStatus();
 
-        require(CurrentAmount >= amount);
-
         require (
-            (status == Status.Paid && msg.sender == Beneficiary) ||
-            (status == Status.Overdue && msg.sender == PartialReceiver)
+            (status == Status.Paid && msg.sender == beneficiary) ||
+            (status == Status.Overdue && msg.sender == partialReceiver)
         );
 
         doWithdraw(receiver, amount);
 
-        CurrentAmount = CurrentAmount.sub(amount);
+        currentAmount = currentAmount.sub(amount);
     }
 }
 
