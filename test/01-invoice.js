@@ -90,11 +90,10 @@ contract('Invoice - contructor', function(accounts) {
 
         await inst.invoiceAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(args.invoiceAmount);
         await inst.beneficiary({from: accts.anyone}).should.eventually.be.equal(args.beneficiary);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
         await inst.validityPeriod({from: accts.anyone}).should.eventually.be.bignumber.equal(args.validityPeriod);
         await inst.payer({from: accts.anyone}).should.eventually.be.equal(args.payer);
         await inst.partialReceiver({from: accts.anyone}).should.eventually.be.equal(args.partialReceiver);
-        await inst.owner({from: accts.anyone}).should.eventually.be.equal(accts.owner);
         await inst.memo({from: accts.anyone}).should.eventually.be.equal(args.memo);
 
         await inst.getStatus({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
@@ -122,9 +121,8 @@ contract('Invoice', function(accounts) {
 
         await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
-        assert.isOk(await inst.withdraw(accts.beneficiary, invoiceAmount, {from: accts.beneficiary}));
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
     it('One pay with refund', async function() {
@@ -140,9 +138,8 @@ contract('Invoice', function(accounts) {
 
         await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
-        assert.isOk(await inst.withdraw(accts.beneficiary, invoiceAmount, {from: accts.beneficiary}));
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
     it('Many pays', async function() {
@@ -160,9 +157,8 @@ contract('Invoice', function(accounts) {
             await inst.sendTransaction({from: accts.payer, value: payAmount});
 
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
-        assert.isOk(await inst.withdraw(accts.beneficiary, invoiceAmount, {from: accts.beneficiary}));
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
     it('Refund after full paid', async function() {
@@ -176,14 +172,12 @@ contract('Invoice', function(accounts) {
 
         await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
 
         await expectThrow(inst.sendTransaction({from: accts.payer, value: invoiceAmount}));
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
-
-        assert.isOk(await inst.withdraw(accts.beneficiary, invoiceAmount, {from: accts.beneficiary}));
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(invoiceAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
     it('Overdue pay', async function() {
@@ -202,28 +196,45 @@ contract('Invoice', function(accounts) {
 
         await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(1);
         await expectThrow(inst.sendTransaction({from: accts.payer, value: invoiceAmount}));
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
+    });
 
-        await inst.withdraw(accts.beneficiary, payAmount, {from: accts.beneficiary});
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+    it('Partial withdraw', async function() {
+        let invoiceAmount = web3.toWei('1.0');
+
+        let inst = await newInstance(Object.assign({
+            validityPeriod: 0,
+        }, accts));
+
+        let payAmount = web3.toWei('0.5');
+
+        await inst.sendTransaction({from: accts.payer, value: payAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+
+        let withdrawAmount = web3.toWei('0.5');
+        await inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.beneficiary});
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
     it('Over withdraw', async function() {
         let invoiceAmount = web3.toWei('1.0');
 
         let inst = await newInstance(Object.assign({
-            validityPeriod: now() + 1000,
-            partialReceiver: accts.beneficiary,
+            validityPeriod: 0,
         }, accts));
 
-        await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
-        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
+        let payAmount = web3.toWei('0.1');
 
-        let withdrawAmount = web3.toWei('1.1');
+        await inst.sendTransaction({from: accts.payer, value: payAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+
+        let withdrawAmount = web3.toWei('0.2');
         await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.beneficiary}));
     });
 
-    it('Withdraw after validity period if full paid', async function() {
+    it('Withdraw after validity period if not full paid', async function() {
         let invoiceAmount = web3.toWei('1.0');
 
         let inst = await newInstance(Object.assign({
@@ -231,14 +242,18 @@ contract('Invoice', function(accounts) {
             partialReceiver: accts.beneficiary,
         }, accts));
 
-        await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
-        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
+        let payAmount = web3.toWei('0.5');
 
-        passTime(120);
+        await inst.sendTransaction({from: accts.payer, value: payAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+        await expectThrow(inst.withdraw(accts.beneficiary, payAmount, {from: accts.beneficiary}));
 
-        await inst.withdraw(accts.beneficiary, invoiceAmount, {from: accts.beneficiary});
-        await inst.currentAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
-        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
+        passTime(1200);
+
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(1);
+        await inst.withdraw(accts.beneficiary, payAmount, {from: accts.beneficiary});
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
     });
 });
 

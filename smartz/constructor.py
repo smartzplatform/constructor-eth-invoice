@@ -41,6 +41,13 @@ class Constructor(ConstructorInstance):
                     "maxLength": 256
                 },
 
+                "autoWithdrawOnPaid": {
+                    "title": "Auto send on paid",
+                    "description": "Auto send funds to beneficiary if invoice become paid",
+                    "type": "boolean",
+                    "default": True
+                },
+
                 "payer": {
                     "title": "Payer address",
                     "description": "If this address is set, invoice can be paid only by it. All other receipts will be returned.",
@@ -135,13 +142,18 @@ class Constructor(ConstructorInstance):
                 "error_descr": "incorrect `partialReceiver`"
             }
 
+        autoWithdrawOnPaidCode = ""
+        if fields_vals['autoWithdrawOnPaid'] == True:
+            autoWithdrawOnPaidCode = "doWithdraw(beneficiary, getBalance());"
+
         source = source \
             .replace('%invoiceAmount%', str(fields_vals['invoiceAmount'])) \
             .replace('%beneficiary%', fields_vals['beneficiary']) \
             .replace('%memo%', fields_vals['memo']) \
             .replace('%payer%', fields_vals['payer']) \
             .replace('%validityPeriod%', str(fields_vals['validityPeriod'])) \
-            .replace('%partialReceiver%', fields_vals['partialReceiver'])
+            .replace('%partialReceiver%', fields_vals['partialReceiver']) \
+            .replace('%autoWithdrawOnPaid%', autoWithdrawOnPaidCode)
 
         return {
             "result": "success",
@@ -166,9 +178,9 @@ class Constructor(ConstructorInstance):
                 'sorting_order': 20
             },
 
-            'currentAmount': {
-                'title': 'Current Amount',
-                'description': 'Ether amount currently accumulated in invoice contract.',
+            'paidAmount': {
+                'title': 'Current Paid Amount',
+                'description': 'Ether amount which currently paid.',
                 'ui:widget': 'ethCount',
                 'sorting_order': 30
             },
@@ -183,16 +195,23 @@ class Constructor(ConstructorInstance):
                 'sorting_order': 40
             },
 
+            'getBalance': {
+                'title': 'Balance',
+                'description': 'Ether amount which currently accumulated in contract.',
+                'ui:widget': 'ethCount',
+                'sorting_order': 50
+            },
+
             'beneficiary': {
                 'title': 'Beneficiary',
                 'description': 'Who will get money when the invoice is paid.',
-                'sorting_order': 50
+                'sorting_order': 60
             },
 
             'payer': {
                 'title': 'Payer',
                 'description': 'If this address is set, invoice can be paid only from it. All other receipts will be returned.',
-                'sorting_order': 60
+                'sorting_order': 70
             },
 
             'validityPeriod': {
@@ -202,15 +221,16 @@ class Constructor(ConstructorInstance):
                 'ui:widget_options': {
                     'format': "yyyy.mm.dd HH:MM:ss (o)"
                 },
-                'sorting_order': 70
+                'sorting_order': 80
             },
 
             'partialReceiver': {
                 'title': 'Partial Receiver',
                 'description': 'Who will be able to withdraw funds from invoice contract after it validity period ends if partial funds accumulated but invoice amount is not collected.',
-                'sorting_order': 80
+                'sorting_order': 90
             },
 
+            # Write functions
             '': {
                 'title': 'Pay',
                 'description': 'Pay the invoice',
@@ -247,7 +267,7 @@ class Constructor(ConstructorInstance):
         return {
             "result": "success",
             'function_specs': function_titles,
-            'dashboard_functions': ['memo', 'invoiceAmount', 'currentAmount', 'getStatus']
+            'dashboard_functions': ['memo', 'invoiceAmount', 'paidAmount', 'getStatus']
         }
 
 
@@ -305,15 +325,12 @@ contract Invoice {
     );
 
     uint256 public invoiceAmount;
-    uint256 public currentAmount;
+    uint256 public paidAmount;
     uint256 %validityPeriodVisibility% validityPeriod;
     address public beneficiary;
     address %payerVisibility% payer;
     address %partialReceiverVisibility% partialReceiver;
     string public memo;
-    address public owner;
-
-    bool internal wasPaid;
 
     function Invoice (
         uint256 _invoiceAmount,
@@ -334,7 +351,6 @@ contract Invoice {
         payer = _payer;
         validityPeriod = _validityPeriod;
         partialReceiver = _partialReceiver;
-        owner = msg.sender;
     }
 
     modifier onlyPayer() {
@@ -342,8 +358,12 @@ contract Invoice {
         _;
     }
 
+    function getBalance() public view returns (uint256) {
+        return address(this).balance;
+    }
+
     function getStatus() public view returns (Status) {
-        if (wasPaid == true)
+        if (paidAmount == invoiceAmount)
             return Status.Paid;
         if (validityPeriod != 0 && now > validityPeriod)
             return Status.Overdue;
@@ -363,34 +383,35 @@ contract Invoice {
     function () public payable onlyPayer {
         require(getStatus() == Status.Active);
 
-        uint256 will = currentAmount.add(msg.value);
+        uint256 will = paidAmount.add(msg.value);
 
         if (will >= invoiceAmount) {
             if (will > invoiceAmount)
                 doRefund(will - invoiceAmount);
-            currentAmount = invoiceAmount;
-            wasPaid = true;
+
+            paidAmount = invoiceAmount;
+
+            %autoWithdrawOnPaid%
         }
         else {
-            currentAmount = will;
+            paidAmount = will;
         }
 
         Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
-        require(currentAmount >= amount);
+        require(getBalance() >= amount);
 
         Status status = getStatus();
 
         require (
             (status == Status.Paid && msg.sender == beneficiary) ||
-            (status == Status.Overdue && msg.sender == partialReceiver)
+            (status == Status.Overdue && msg.sender == partialReceiver) ||
+            (validityPeriod == 0)
         );
 
         doWithdraw(receiver, amount);
-
-        currentAmount = currentAmount.sub(amount);
     }
 }
 

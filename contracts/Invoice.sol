@@ -23,15 +23,12 @@ contract Invoice {
     );
 
     uint256 public invoiceAmount;
-    uint256 public currentAmount;
+    uint256 public paidAmount;
     uint256 public validityPeriod;
     address public beneficiary;
     address public payer;
     address public partialReceiver;
     string public memo;
-    address public owner;
-
-    bool internal wasPaid;
 
     constructor (
         uint256 _invoiceAmount,
@@ -52,7 +49,6 @@ contract Invoice {
         payer = _payer;
         validityPeriod = _validityPeriod;
         partialReceiver = _partialReceiver;
-        owner = msg.sender;
     }
 
     modifier onlyPayer() {
@@ -60,8 +56,12 @@ contract Invoice {
         _;
     }
 
+    function getBalance() public view returns (uint256) {
+        return address(this).balance;
+    }
+
     function getStatus() public view returns (Status) {
-        if (wasPaid == true)
+        if (paidAmount == invoiceAmount)
             return Status.Paid;
         if (validityPeriod != 0 && now > validityPeriod)
             return Status.Overdue;
@@ -81,34 +81,35 @@ contract Invoice {
     function () public payable onlyPayer {
         require(getStatus() == Status.Active);
 
-        uint256 will = currentAmount.add(msg.value);
+        uint256 will = paidAmount.add(msg.value);
 
         if (will >= invoiceAmount) {
             if (will > invoiceAmount)
                 doRefund(will - invoiceAmount);
-            currentAmount = invoiceAmount;
-            wasPaid = true;
+
+            paidAmount = invoiceAmount;
+
+            doWithdraw(beneficiary, getBalance());
         }
         else {
-            currentAmount = will;
+            paidAmount = will;
         }
 
         emit Payment(msg.sender, msg.value);
     }
 
     function withdraw(address receiver, uint256 amount) public {
-        require(currentAmount >= amount);
+        require(getBalance() >= amount);
 
         Status status = getStatus();
 
         require (
             (status == Status.Paid && msg.sender == beneficiary) ||
-            (status == Status.Overdue && msg.sender == partialReceiver)
+            (status == Status.Overdue && msg.sender == partialReceiver) ||
+            (validityPeriod == 0)
         );
 
         doWithdraw(receiver, amount);
-
-        currentAmount = currentAmount.sub(amount);
     }
 }
 
