@@ -218,6 +218,37 @@ contract('Invoice', function(accounts) {
         await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
 
+    it('Partial withdraw with non beneficiary', async function() {
+        let invoiceAmount = web3.toWei('1.0');
+
+        let inst = await newInstance(Object.assign({
+            validityPeriod: 0,
+        }, accts));
+
+        let payAmount = web3.toWei('0.5');
+
+        await inst.sendTransaction({from: accts.payer, value: payAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+
+        let withdrawAmount = web3.toWei('0.5');
+        await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.anyone}));
+    });
+
+    it('Withdraw with non beneficiary', async function() {
+        let invoiceAmount = web3.toWei('1.0');
+
+        let inst = await newInstance(Object.assign({
+            validityPeriod: 0,
+        }, accts));
+
+        await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(2);
+
+        let withdrawAmount = web3.toWei('0.5');
+        await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.anyone}));
+        await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.payer}));
+    });
+
     it('Over withdraw', async function() {
         let invoiceAmount = web3.toWei('1.0');
 

@@ -406,9 +406,8 @@ contract Invoice {
         Status status = getStatus();
 
         require (
-            (status == Status.Paid && msg.sender == beneficiary) ||
-            (status == Status.Overdue && msg.sender == partialReceiver) ||
-            (validityPeriod == 0)
+            ((status == Status.Paid || validityPeriod == 0) && msg.sender == beneficiary) ||
+            (status == Status.Overdue && msg.sender == partialReceiver)
         );
 
         doWithdraw(receiver, amount);
