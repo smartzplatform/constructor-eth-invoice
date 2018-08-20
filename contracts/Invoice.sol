@@ -38,10 +38,8 @@ contract Invoice {
         uint256 _validityPeriod,
         address _partialReceiver
     ) public {
-        if (_validityPeriod != 0) {
-            require(_validityPeriod > now);
-            require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
-        }
+        require(_validityPeriod > now || _validityPeriod == 0);
+        require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
 
         invoiceAmount = _invoiceAmount;
         memo = _memo;
@@ -104,7 +102,8 @@ contract Invoice {
         Status status = getStatus();
 
         require (
-            ((status == Status.Paid || validityPeriod == 0) && msg.sender == beneficiary) ||
+            (status == Status.Paid && msg.sender == beneficiary) ||
+            (status == Status.Active && validityPeriod == 0 && msg.sender == partialReceiver) ||
             (status == Status.Overdue && msg.sender == partialReceiver)
         );
 

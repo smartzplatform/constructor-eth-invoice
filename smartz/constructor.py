@@ -15,7 +15,7 @@ class Constructor(ConstructorInstance):
         json_schema = {
             "type": "object",
             "required": [
-                "invoiceAmount", "beneficiary", "memo"
+                "invoiceAmount", "beneficiary", "memo", "partialReceiver"
             ],
 
             "additionalProperties": True,
@@ -59,20 +59,17 @@ class Constructor(ConstructorInstance):
                     "description": "After this date invoice will become invalid and send back all incoming Ether. If it was partially paid before this date, stored ether will become available for withdraw by payer or beneficiary depending on the following parameter value.",
                     "$ref": "#/definitions/unixTime"
                 },
+
+                "partialReceiver": {
+                    "title": "Partial Receiver",
+                    "description": "Who will withdraw funds from invoice contract in case it's validity period ended and it accumulated some funds on it.",
+                    "type": "string",
+                    "default": "Beneficiary",
+                    "enum": ['Beneficiary', 'Payer'],
+                },
             },
 
             "dependencies": {
-                "validityPeriod": {
-                    "properties": {
-                        "partialReceiver": {
-                            "title": "Partial Receiver",
-                            "description": "Who will withdraw funds from invoice contract in case it's validity period ended and it accumulated some funds on it.",
-                            "type": "string",
-                            "enum": ['Beneficiary', 'Payer'],
-                        }
-                    },
-                    "required": ["partialReceiver"]
-                },
                 "partialReceiver": {
                     "oneOf": [{
                         "properties": {
@@ -93,7 +90,7 @@ class Constructor(ConstructorInstance):
         }
 
         ui_schema = {
-            "ui:order": ["invoiceAmount", "beneficiary", "memo", "payer", "validityPeriod", "*"],
+            "ui:order": ["invoiceAmount", "beneficiary", "memo", "payer", "validityPeriod", "partialReceiver", "*"],
 
             "invoiceAmount": {
                 "ui:widget": "ethCount",
@@ -125,14 +122,10 @@ class Constructor(ConstructorInstance):
         if 'validityPeriod' not in fields_vals:
             fields_vals['validityPeriod'] = 0
             source = source.replace('%validityPeriodVisibility%', 'internal')
-            source = source.replace('%partialReceiverVisibility%', 'internal')
         else:
             source = source.replace('%validityPeriodVisibility%', 'public')
-            source = source.replace('%partialReceiverVisibility%', 'public')
 
-        if 'partialReceiver' not in fields_vals:
-            fields_vals['partialReceiver'] = '0x00'
-        elif fields_vals['partialReceiver'] == 'Beneficiary':
+        if fields_vals['partialReceiver'] == 'Beneficiary':
             fields_vals['partialReceiver'] = fields_vals['beneficiary']
         elif fields_vals['partialReceiver'] == 'Payer':
             fields_vals['partialReceiver'] = fields_vals['payer']
@@ -329,7 +322,7 @@ contract Invoice {
     uint256 %validityPeriodVisibility% validityPeriod;
     address public beneficiary;
     address %payerVisibility% payer;
-    address %partialReceiverVisibility% partialReceiver;
+    address public partialReceiver;
     string public memo;
 
     function Invoice (
@@ -340,10 +333,8 @@ contract Invoice {
         uint256 _validityPeriod,
         address _partialReceiver
     ) public {
-        if (_validityPeriod != 0) {
-            require(_validityPeriod > now);
-            require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
-        }
+        require(_validityPeriod > now || _validityPeriod == 0);
+        require(_partialReceiver == _payer || _partialReceiver == _beneficiary);
 
         invoiceAmount = _invoiceAmount;
         memo = _memo;
@@ -406,7 +397,8 @@ contract Invoice {
         Status status = getStatus();
 
         require (
-            ((status == Status.Paid || validityPeriod == 0) && msg.sender == beneficiary) ||
+            (status == Status.Paid && msg.sender == beneficiary) ||
+            (status == Status.Active && validityPeriod == 0 && msg.sender == partialReceiver) ||
             (status == Status.Overdue && msg.sender == partialReceiver)
         );
 

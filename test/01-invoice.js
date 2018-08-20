@@ -53,7 +53,7 @@ contract('Invoice - contructor', function(accounts) {
     const newInstance = async (args) => await Invoice.new(...contructorArgs(args), {from: accts.owner});
 
     it('0 validity period', async function() {
-        let inst = await newInstance(Object.assign({}, accts));
+        let inst = await newInstance(Object.assign({partialReceiver: accts.beneficiary}, accts));
 
         await inst.validityPeriod({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
     });
@@ -200,11 +200,36 @@ contract('Invoice', function(accounts) {
         await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
     });
 
+    it('Withdraw when validityPeriod == 0', async function() {
+        let invoiceAmount = web3.toWei('1.0');
+
+        let inst = await newInstance(Object.assign({
+            validityPeriod: 0,
+            partialReceiver: accts.beneficiary
+        }, accts));
+
+        let payAmount = web3.toWei('0.5');
+
+        await inst.sendTransaction({from: accts.payer, value: payAmount});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+
+        let withdrawAmount = web3.toWei('0.5');
+
+        await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.payer}));
+        await expectThrow(inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.anyone}));
+
+        inst.withdraw(accts.beneficiary, withdrawAmount, {from: accts.beneficiary});
+        await inst.getStatus({from: accts.payer}).should.eventually.be.bignumber.equal(0);
+        await inst.getBalance({from: accts.anyone}).should.eventually.be.bignumber.equal(0);
+        await inst.paidAmount({from: accts.anyone}).should.eventually.be.bignumber.equal(payAmount);
+    });
+
     it('Partial withdraw', async function() {
         let invoiceAmount = web3.toWei('1.0');
 
         let inst = await newInstance(Object.assign({
             validityPeriod: 0,
+            partialReceiver: accts.beneficiary
         }, accts));
 
         let payAmount = web3.toWei('0.5');
@@ -223,6 +248,7 @@ contract('Invoice', function(accounts) {
 
         let inst = await newInstance(Object.assign({
             validityPeriod: 0,
+            partialReceiver: accts.beneficiary
         }, accts));
 
         let payAmount = web3.toWei('0.5');
@@ -239,6 +265,7 @@ contract('Invoice', function(accounts) {
 
         let inst = await newInstance(Object.assign({
             validityPeriod: 0,
+            partialReceiver: accts.beneficiary
         }, accts));
 
         await inst.sendTransaction({from: accts.payer, value: invoiceAmount});
@@ -254,6 +281,7 @@ contract('Invoice', function(accounts) {
 
         let inst = await newInstance(Object.assign({
             validityPeriod: 0,
+            partialReceiver: accts.beneficiary
         }, accts));
 
         let payAmount = web3.toWei('0.1');
